@@ -7,7 +7,7 @@
 
 import FoundationModels
 
-@Generable
+@Generable(description: "A single filter. Only use a case when a specific word in the user's request names it.")
 enum FilterConstraint {
     case species(Species)
     case gender(Gender)
@@ -21,7 +21,7 @@ enum FilterConstraint {
 
 @Generable
 struct FilterRequest {
-    @Guide(description: "One entry per dimension the user explicitly named in their request. Emit zero entries when the user named no constraints (e.g. 'show everyone'). Do NOT add a constraint for any dimension the user did not mention.")
+    @Guide(description: "One entry per word in the request that names a filter. Each entry must point to a word the user actually wrote. Generic words like 'people', 'characters' or 'everyone' are not filters. Emit zero entries when the user named no filters (e.g. 'show everyone').")
     let constraints: [FilterConstraint]
 
     var filter: Filter {

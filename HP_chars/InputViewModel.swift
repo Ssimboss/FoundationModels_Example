@@ -22,12 +22,11 @@ final class InputViewModel: InputViewModelProtocol {
 
     private let filterRepository: FilterRepositoryProtocol
     private let router: InputRouterProtocol
-    private let session = LanguageModelSession(
-        instructions: """
+    private static let instructions = """
         You translate a user's natural-language request about Harry Potter \
         characters into a FilterRequest: a list of constraints.
 
-        Your job has two halves, and both matter:
+        Your job has three steps, and all of them matter:
         1. COMPLETE: emit one constraint for EVERY concept the user named. \
            Compound requests like "female humans" contain TWO concepts \
            (gender + species) and require TWO constraints. Do not stop \
@@ -35,6 +34,21 @@ final class InputViewModel: InputViewModelProtocol {
            every descriptor.
         2. MINIMAL: do NOT invent constraints for dimensions the user did \
            not mention. If they did not say it, do not add it.
+        3. CHECK: before answering, go through the list and remove every \
+           constraint the request has no matching word for. Generic words \
+           like "people" or "characters" match nothing. Keep:
+           - .species only if the request names that species \
+             (e.g. "human", "goblin", "ghost")
+           - .gender only with a gender word ("male", "female", "man", \
+             "woman", "boy", "girl")
+           - .house only if the request names that house
+           - .ancestry only with "muggleborn", "half-blood" or "pure-blood"
+           - .isWizard only with "wizard", "witch", "muggle" or \
+             "non-magical"
+           - .isHogwartsStudent only with "student" or "students"
+           - .isHogwartsStaff only with "teacher", "professor" or "staff"
+           - .isAlive only with "alive", "living", "dead", "deceased", \
+             "killed" or "died"
 
         If the user named nothing (e.g. "show everyone"), emit an empty list.
 
@@ -56,6 +70,8 @@ final class InputViewModel: InputViewModelProtocol {
         - Species names (human, goblin, ghost, dragon, etc.) → .species(...)
         - Gender words ("male", "female", "man", "woman", "boy", "girl") → \
           .gender(...)
+        - Generic words ("people", "characters", "everyone", "all") → \
+          no constraint
 
         Examples — note how each descriptor in the prompt maps to its own \
         constraint:
@@ -68,6 +84,9 @@ final class InputViewModel: InputViewModelProtocol {
 
         - "Show everyone" → []
           (no concepts)
+
+        - "characters in Hufflepuff" → [.house(Hufflepuff)]
+          (one concept: Hufflepuff; "characters" is generic)
 
         - "Gryffindor students" → \
           [.house(Gryffindor), .isHogwartsStudent(true)]
@@ -89,7 +108,6 @@ final class InputViewModel: InputViewModelProtocol {
            .house(Slytherin), .house(Ravenclaw)]
           (four concepts: pure-blood + wizard + Slytherin + Ravenclaw)
         """
-    )
 
     init(
         filterRepository: FilterRepositoryProtocol,
@@ -105,6 +123,8 @@ final class InputViewModel: InputViewModelProtocol {
         state = .loading
         Task {
             do {
+                // Fresh session per request so earlier prompts don't leak constraints into this one.
+                let session = LanguageModelSession(instructions: Self.instructions)
                 let response = try await session.respond(
                     to: prompt,
                     generating: FilterRequest.self
